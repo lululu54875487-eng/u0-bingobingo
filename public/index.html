@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#f6dc8b" />
+    <title>小u0賓果bingo</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="/socket.io/socket.io.js" defer></script>
+    <script src="/client.js" defer></script>
+  </head>
+  <body>
+    <main class="shell">
+      <section id="joinView" class="join-view" aria-labelledby="gameTitle">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">
+            <span class="chick-face">u0</span>
+          </div>
+          <div>
+            <h1 id="gameTitle">小u0賓果bingo</h1>
+            <p>開房、叫號、蓋章，一起把柔柔的黃色填滿。</p>
+          </div>
+        </div>
+
+        <form id="joinForm" class="join-panel">
+          <label for="nameInput">暱稱</label>
+          <input id="nameInput" name="name" autocomplete="nickname" maxlength="14" placeholder="輸入可愛暱稱" />
+
+          <label for="roomInput">房間代碼</label>
+          <input id="roomInput" name="room" autocomplete="off" maxlength="8" placeholder="有代碼就輸入，沒有就建立房間" />
+          <p class="field-hint">房主建立房間後，把連結傳給朋友就能一起玩；參賽席最多 6 人，其他人會進觀眾席。</p>
+
+          <div class="join-actions">
+            <button class="primary-button" type="submit">加入房間</button>
+            <button id="createRoomButton" class="secondary-button" type="button">建立房間</button>
+          </div>
+
+          <p id="joinError" class="error-text" role="alert"></p>
+        </form>
+      </section>
+
+      <section id="gameView" class="game-view" hidden>
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">小u0賓果bingo</p>
+            <h2 id="statusTitle">準備開局</h2>
+          </div>
+          <div class="room-pill">
+            <span id="roomCodeLabel">----</span>
+            <button id="copyLinkButton" type="button" title="複製房間連結">複製</button>
+          </div>
+        </header>
+
+        <section class="status-strip" aria-live="polite">
+          <div>
+            <span>最新叫號</span>
+            <strong id="lastCallLabel">等待開始</strong>
+          </div>
+          <div>
+            <span>下一次</span>
+            <strong id="nextCallLabel">--</strong>
+          </div>
+          <div>
+            <span>決勝</span>
+            <strong id="winLineLabel">1 條線</strong>
+          </div>
+        </section>
+
+        <section class="play-layout">
+          <aside class="left-panel">
+            <div class="players-box">
+              <div class="panel-title">
+                <h3>參賽者</h3>
+                <span id="seatCountLabel">0/6</span>
+              </div>
+              <ul id="playersList" class="players-list"></ul>
+            </div>
+
+            <div class="settings-box">
+              <div class="panel-title">
+                <h3>房主設定</h3>
+                <button id="saveSettingsButton" class="small-button" type="button">儲存</button>
+              </div>
+
+              <label for="categorySelect">題庫</label>
+              <select id="categorySelect">
+                <option value="mixed">全部混合</option>
+                <option value="numbers">數字派對</option>
+                <option value="fruits">水果果籃</option>
+                <option value="animals">動物朋友</option>
+                <option value="custom">自訂題庫</option>
+              </select>
+
+              <label for="winLinesSelect">決勝條件</label>
+              <select id="winLinesSelect">
+                <option value="1">1 條線</option>
+                <option value="2">2 條線</option>
+                <option value="3">3 條線</option>
+              </select>
+
+              <label for="customItemsInput">自訂題目</label>
+              <textarea id="customItemsInput" rows="6" maxlength="1200" placeholder="一行一個題目，也可用逗號分隔&#10;布丁&#10;熱氣球&#10;小蛋糕"></textarea>
+              <p id="settingsHint" class="helper-text">房主可以在開局前調整題庫與勝利條件。</p>
+              <p class="mini-rule">開始後系統會自動叫號，玩家不用手動點格子，先完成指定線數就獲勝。</p>
+            </div>
+          </aside>
+
+          <section class="board-panel" aria-labelledby="boardTitle">
+            <div class="board-head">
+              <div>
+                <p id="roleLabel" class="role-label">等待入座</p>
+                <h3 id="boardTitle">我的賓果卡</h3>
+              </div>
+              <div class="game-actions">
+                <button id="startButton" class="primary-button" type="button">開始遊戲</button>
+                <button id="resetButton" class="secondary-button" type="button">回準備室</button>
+              </div>
+            </div>
+
+            <div id="bingoBoard" class="bingo-board" aria-live="polite"></div>
+            <div class="board-watermark">小u0賓果bingo · made for cute little party time</div>
+
+            <div class="called-panel">
+              <div class="panel-title">
+                <h3>已叫號</h3>
+                <span id="calledCountLabel">0</span>
+              </div>
+              <div id="calledList" class="called-list"></div>
+            </div>
+          </section>
+
+          <aside class="right-panel">
+            <div class="spectators-box">
+              <div class="panel-title">
+                <h3>觀眾</h3>
+                <span id="spectatorCountLabel">0</span>
+              </div>
+              <ul id="spectatorsList" class="spectators-list"></ul>
+            </div>
+
+            <div class="chat-box">
+              <h3>留言互動</h3>
+              <div id="messagesList" class="messages-list" aria-live="polite"></div>
+              <div class="emoji-row" aria-label="快速表情">
+                <button type="button" data-emoji="🐣">🐣</button>
+                <button type="button" data-emoji="✨">✨</button>
+                <button type="button" data-emoji="👏">👏</button>
+                <button type="button" data-emoji="🎯">🎯</button>
+                <button type="button" data-emoji="💛">💛</button>
+                <button type="button" data-emoji="🍓">🍓</button>
+                <button type="button" data-emoji="🥳">🥳</button>
+                <button type="button" data-emoji="BINGO!">BINGO!</button>
+              </div>
+              <form id="chatForm" class="chat-form">
+                <input id="chatInput" autocomplete="off" maxlength="80" placeholder="留言、歡呼或按表情" />
+                <button type="submit">送出</button>
+              </form>
+              <p class="mini-rule">觀眾也可以留言和按表情，一起幫賓果卡加油。</p>
+            </div>
+          </aside>
+        </section>
+        <p class="page-watermark">小u0賓果bingo · 柔柔小雞黃版</p>
+      </section>
+    </main>
+  </body>
+</html>

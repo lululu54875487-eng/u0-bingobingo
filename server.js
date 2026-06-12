@@ -1,0 +1,574 @@
+const express = require("express");
+const http = require("http");
+const path = require("path");
+const { Server } = require("socket.io");
+
+const PORT = process.env.PORT || 3000;
+const ROOM_CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const MAX_PLAYERS = 6;
+const MAX_NAME_LENGTH = 14;
+const MAX_CUSTOM_ITEMS = 120;
+const MAX_ITEM_LENGTH = 18;
+const CALL_INTERVAL_MS = 4200;
+
+const itemCategories = {
+  numbers: {
+    label: "數字派對",
+    items: Array.from({ length: 75 }, (_, index) => String(index + 1))
+  },
+  fruits: {
+    label: "水果果籃",
+    items: [
+      "蘋果",
+      "香蕉",
+      "草莓",
+      "葡萄",
+      "西瓜",
+      "芒果",
+      "鳳梨",
+      "奇異果",
+      "水蜜桃",
+      "櫻桃",
+      "橘子",
+      "柳橙",
+      "檸檬",
+      "藍莓",
+      "蔓越莓",
+      "梨子",
+      "哈密瓜",
+      "木瓜",
+      "火龍果",
+      "百香果",
+      "番石榴",
+      "柚子",
+      "荔枝",
+      "龍眼",
+      "桑葚",
+      "椰子",
+      "柿子",
+      "李子",
+      "梅子",
+      "無花果",
+      "覆盆莓",
+      "葡萄柚",
+      "香瓜",
+      "蓮霧",
+      "楊桃",
+      "酪梨",
+      "榴槤",
+      "山竹",
+      "紅毛丹",
+      "枇杷",
+      "甜桃",
+      "金桔",
+      "棗子",
+      "黑莓",
+      "蜜蘋果",
+      "青蘋果",
+      "蜜柑",
+      "甜橙",
+      "小番茄",
+      "白葡萄"
+    ]
+  },
+  animals: {
+    label: "動物朋友",
+    items: [
+      "小狗",
+      "小貓",
+      "兔子",
+      "倉鼠",
+      "企鵝",
+      "熊貓",
+      "長頸鹿",
+      "大象",
+      "獅子",
+      "老虎",
+      "斑馬",
+      "河馬",
+      "無尾熊",
+      "海豚",
+      "鯨魚",
+      "海龜",
+      "狐狸",
+      "松鼠",
+      "刺蝟",
+      "羊駝",
+      "浣熊",
+      "貓頭鷹",
+      "鸚鵡",
+      "天鵝",
+      "孔雀",
+      "青蛙",
+      "烏龜",
+      "章魚",
+      "水母",
+      "海星",
+      "蜜蜂",
+      "蝴蝶",
+      "瓢蟲",
+      "駱駝",
+      "袋鼠",
+      "北極熊",
+      "馴鹿",
+      "小雞",
+      "鴨子",
+      "綿羊",
+      "小豬",
+      "小牛",
+      "馬兒",
+      "猴子",
+      "樹懶",
+      "獨角仙",
+      "螢火蟲",
+      "鯊魚",
+      "貝殼",
+      "螃蟹"
+    ]
+  }
+};
+
+const categoryOptions = [
+  { id: "mixed", label: "全部混合" },
+  ...Object.entries(itemCategories).map(([id, category]) => ({ id, label: category.label })),
+  { id: "custom", label: "自訂題庫" }
+];
+
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: "*"
+  }
+});
+
+app.use(express.static(path.join(__dirname, "public")));
+
+app.get("/room/:roomCode", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "index.html"));
+});
+
+const rooms = new Map();
+
+function makeRoomCode() {
+  let code = "";
+  for (let i = 0; i < 4; i += 1) {
+    code += ROOM_CODE_CHARS[Math.floor(Math.random() * ROOM_CODE_CHARS.length)];
+  }
+  return rooms.has(code) ? makeRoomCode() : code;
+}
+
+function createRoom(roomCode = makeRoomCode()) {
+  const room = {
+    code: roomCode,
+    participants: [],
+    spectators: [],
+    messages: [],
+    status: "lobby",
+    calledItems: [],
+    callDeck: [],
+    winners: [],
+    callTimer: null,
+    nextCallAt: null,
+    settings: {
+      category: "mixed",
+      customItems: [],
+      winLines: 1
+    }
+  };
+  rooms.set(roomCode, room);
+  return room;
+}
+
+function sanitizeRoomCode(roomCode) {
+  return String(roomCode || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8);
+}
+
+function sanitizeName(name) {
+  const cleanName = String(name || "").trim().replace(/\s+/g, " ").slice(0, MAX_NAME_LENGTH);
+  return cleanName || `小玩家${Math.floor(Math.random() * 90) + 10}`;
+}
+
+function sanitizeCategory(category) {
+  const cleanCategory = String(category || "mixed");
+  return categoryOptions.some((item) => item.id === cleanCategory) ? cleanCategory : "mixed";
+}
+
+function sanitizeWinLines(winLines) {
+  const clean = Number(winLines) || 1;
+  return Math.max(1, Math.min(clean, 3));
+}
+
+function sanitizeCustomItems(input) {
+  const lines = Array.isArray(input) ? input : String(input || "").split(/\r?\n|,|，|、/);
+  const seen = new Set();
+  const items = [];
+
+  lines.forEach((line) => {
+    const item = String(line || "").trim().replace(/\s+/g, " ").slice(0, MAX_ITEM_LENGTH);
+    const key = item.toLowerCase();
+    if (!item || seen.has(key)) return;
+    seen.add(key);
+    items.push(item);
+  });
+
+  return items.slice(0, MAX_CUSTOM_ITEMS);
+}
+
+function getItemPool(settings) {
+  const customItems = settings.customItems || [];
+
+  if (settings.category === "custom") {
+    return customItems;
+  }
+
+  const baseItems =
+    settings.category === "mixed"
+      ? Object.values(itemCategories).flatMap((category) => category.items)
+      : itemCategories[settings.category]?.items || [];
+
+  const seen = new Set();
+  return [...baseItems, ...customItems].filter((item) => {
+    const key = item.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function shuffle(items) {
+  const copy = [...items];
+  for (let i = copy.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
+function makeBoard(pool) {
+  const picks = shuffle(pool).slice(0, 24);
+  const board = [];
+  for (let i = 0; i < 25; i += 1) {
+    board.push(i === 12 ? { text: "FREE", free: true } : { text: picks[i > 12 ? i - 1 : i], free: false });
+  }
+  return board;
+}
+
+function lineCount(board, calledSet) {
+  if (!board?.length) return 0;
+  const marked = (index) => board[index]?.free || calledSet.has(board[index]?.text);
+  const lines = [];
+
+  for (let row = 0; row < 5; row += 1) {
+    lines.push([0, 1, 2, 3, 4].map((offset) => row * 5 + offset));
+  }
+  for (let col = 0; col < 5; col += 1) {
+    lines.push([0, 1, 2, 3, 4].map((offset) => offset * 5 + col));
+  }
+  lines.push([0, 6, 12, 18, 24], [4, 8, 12, 16, 20]);
+
+  return lines.filter((line) => line.every(marked)).length;
+}
+
+function getPlayer(room, socketId) {
+  return room.participants.find((player) => player.id === socketId) || room.spectators.find((player) => player.id === socketId);
+}
+
+function publicPlayer(player, room) {
+  const calledSet = new Set(room.calledItems);
+  return {
+    id: player.id,
+    name: player.name,
+    isHost: player.isHost,
+    role: player.role,
+    lines: player.role === "player" ? lineCount(player.board, calledSet) : 0
+  };
+}
+
+function viewerBoard(room, viewerId) {
+  const player = room.participants.find((item) => item.id === viewerId);
+  return player?.board || null;
+}
+
+function roomState(room, viewerId) {
+  const lastItem = room.calledItems[room.calledItems.length - 1] || null;
+  return {
+    code: room.code,
+    participants: room.participants.map((player) => publicPlayer(player, room)),
+    spectators: room.spectators.map((player) => publicPlayer(player, room)),
+    messages: room.messages.slice(-60),
+    status: room.status,
+    calledItems: room.calledItems,
+    lastItem,
+    nextCallAt: room.nextCallAt,
+    winners: room.winners,
+    board: viewerBoard(room, viewerId),
+    settings: room.settings,
+    categoryOptions,
+    maxPlayers: MAX_PLAYERS
+  };
+}
+
+function emitRoom(room) {
+  [...room.participants, ...room.spectators].forEach((player) => {
+    io.to(player.id).emit("room:state", roomState(room, player.id));
+  });
+}
+
+function addMessage(room, message) {
+  room.messages.push({
+    id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    at: Date.now(),
+    ...message
+  });
+  room.messages = room.messages.slice(-80);
+}
+
+function stopCalling(room) {
+  clearTimeout(room.callTimer);
+  room.callTimer = null;
+  room.nextCallAt = null;
+}
+
+function endGame(room, reason = "done") {
+  stopCalling(room);
+  room.status = "finished";
+
+  if (reason === "empty") {
+    addMessage(room, { type: "system", text: "題庫叫完了，這局平手收場。" });
+  }
+
+  emitRoom(room);
+}
+
+function checkWinners(room) {
+  const calledSet = new Set(room.calledItems);
+  const winners = room.participants
+    .map((player) => ({
+      id: player.id,
+      name: player.name,
+      lines: lineCount(player.board, calledSet)
+    }))
+    .filter((player) => player.lines >= room.settings.winLines);
+
+  if (winners.length === 0) return false;
+
+  room.winners = winners;
+  addMessage(room, {
+    type: "win",
+    text: `${winners.map((winner) => winner.name).join("、")} 達成 ${room.settings.winLines} 條線，賓果勝利！`
+  });
+  endGame(room);
+  return true;
+}
+
+function scheduleNextCall(room) {
+  if (room.status !== "playing") return;
+  room.nextCallAt = Date.now() + CALL_INTERVAL_MS;
+  room.callTimer = setTimeout(() => callNextItem(room), CALL_INTERVAL_MS);
+}
+
+function callNextItem(room) {
+  if (room.status !== "playing") return;
+  const item = room.callDeck.shift();
+
+  if (!item) {
+    endGame(room, "empty");
+    return;
+  }
+
+  room.calledItems.push(item);
+  addMessage(room, { type: "call", text: `叫號：${item}` });
+
+  if (checkWinners(room)) return;
+
+  emitRoom(room);
+  scheduleNextCall(room);
+}
+
+function startGame(room) {
+  if (room.status === "playing") return;
+
+  const pool = getItemPool(room.settings);
+  if (pool.length < 24) {
+    addMessage(room, { type: "system", text: "題庫至少需要 24 個項目才可以開始。" });
+    emitRoom(room);
+    return;
+  }
+
+  if (room.participants.length < 1) {
+    addMessage(room, { type: "system", text: "至少 1 位參賽者就可以開始遊戲。" });
+    emitRoom(room);
+    return;
+  }
+
+  stopCalling(room);
+  room.status = "playing";
+  room.calledItems = [];
+  room.callDeck = shuffle(pool);
+  room.winners = [];
+  room.participants.forEach((player) => {
+    player.board = makeBoard(pool);
+  });
+
+  addMessage(room, {
+    type: "system",
+    text: `遊戲開始！先完成 ${room.settings.winLines} 條線的人獲勝。`
+  });
+  emitRoom(room);
+  callNextItem(room);
+}
+
+function resetToLobby(room) {
+  stopCalling(room);
+  room.status = "lobby";
+  room.calledItems = [];
+  room.callDeck = [];
+  room.winners = [];
+  room.participants.forEach((player) => {
+    player.board = null;
+  });
+  addMessage(room, { type: "system", text: "已回到準備室，可以調整題庫再開一局。" });
+  emitRoom(room);
+}
+
+function makeGuest(socketId, name, role, isHost = false) {
+  return {
+    id: socketId,
+    name: sanitizeName(name),
+    role,
+    isHost,
+    board: null
+  };
+}
+
+io.on("connection", (socket) => {
+  socket.on("room:create", ({ name }, callback) => {
+    const room = createRoom();
+    const player = makeGuest(socket.id, name, "player", true);
+    room.participants.push(player);
+    socket.join(room.code);
+    socket.data.roomCode = room.code;
+
+    addMessage(room, { type: "system", text: `${player.name} 建立房間，成為房主。` });
+    callback?.({ ok: true, roomCode: room.code });
+    emitRoom(room);
+  });
+
+  socket.on("room:join", ({ roomCode, name }, callback) => {
+    const code = sanitizeRoomCode(roomCode);
+    const room = rooms.get(code);
+    if (!room) {
+      callback?.({ ok: false, error: "找不到房間，請確認代碼是否正確。" });
+      return;
+    }
+
+    const role = room.participants.length < MAX_PLAYERS && room.status === "lobby" ? "player" : "spectator";
+    const guest = makeGuest(socket.id, name, role, room.participants.length === 0 && room.spectators.length === 0);
+    if (role === "player") {
+      room.participants.push(guest);
+    } else {
+      room.spectators.push(guest);
+    }
+
+    socket.join(code);
+    socket.data.roomCode = code;
+    addMessage(room, {
+      type: "system",
+      text: role === "player" ? `${guest.name} 加入參賽席。` : `${guest.name} 加入觀眾席。`
+    });
+    callback?.({ ok: true, roomCode: code, role });
+    emitRoom(room);
+  });
+
+  socket.on("room:updateSettings", ({ category, customItems, winLines }, callback) => {
+    const room = rooms.get(socket.data.roomCode);
+    if (!room) return;
+    const player = getPlayer(room, socket.id);
+    if (!player?.isHost) {
+      callback?.({ ok: false, error: "只有房主可以調整設定。" });
+      return;
+    }
+    if (room.status === "playing") {
+      callback?.({ ok: false, error: "遊戲進行中不能調整設定。" });
+      return;
+    }
+
+    room.settings.category = sanitizeCategory(category);
+    room.settings.customItems = sanitizeCustomItems(customItems);
+    room.settings.winLines = sanitizeWinLines(winLines);
+    addMessage(room, {
+      type: "system",
+      text: `房主更新設定：${categoryOptions.find((item) => item.id === room.settings.category)?.label}，${room.settings.winLines} 條線決勝。`
+    });
+    callback?.({ ok: true });
+    emitRoom(room);
+  });
+
+  socket.on("game:start", () => {
+    const room = rooms.get(socket.data.roomCode);
+    if (!room) return;
+    const player = getPlayer(room, socket.id);
+    if (!player?.isHost) return;
+    startGame(room);
+  });
+
+  socket.on("game:reset", () => {
+    const room = rooms.get(socket.data.roomCode);
+    if (!room) return;
+    const player = getPlayer(room, socket.id);
+    if (!player?.isHost) return;
+    resetToLobby(room);
+  });
+
+  socket.on("chat:message", ({ text }) => {
+    const room = rooms.get(socket.data.roomCode);
+    const player = room ? getPlayer(room, socket.id) : null;
+    if (!room || !player) return;
+
+    const cleanText = String(text || "").trim().slice(0, 80);
+    if (!cleanText) return;
+
+    addMessage(room, {
+      type: "chat",
+      playerName: player.name,
+      text: cleanText
+    });
+    io.to(room.code).emit("chat:message", room.messages[room.messages.length - 1]);
+  });
+
+  socket.on("disconnect", () => {
+    const room = rooms.get(socket.data.roomCode);
+    if (!room) return;
+
+    const leavingPlayer = getPlayer(room, socket.id);
+    room.participants = room.participants.filter((player) => player.id !== socket.id);
+    room.spectators = room.spectators.filter((player) => player.id !== socket.id);
+
+    if (leavingPlayer) {
+      addMessage(room, { type: "system", text: `${leavingPlayer.name} 離開房間。` });
+    }
+
+    if (room.participants.length === 0 && room.spectators.length === 0) {
+      stopCalling(room);
+      rooms.delete(room.code);
+      return;
+    }
+
+    const allGuests = [...room.participants, ...room.spectators];
+    if (!allGuests.some((player) => player.isHost)) {
+      allGuests[0].isHost = true;
+      addMessage(room, { type: "system", text: `${allGuests[0].name} 接任房主。` });
+    }
+
+    if (room.status === "playing") {
+      checkWinners(room);
+    }
+
+    emitRoom(room);
+  });
+});
+
+server.listen(PORT, () => {
+  console.log(`小u0賓果bingo server running on http://localhost:${PORT}`);
+});
