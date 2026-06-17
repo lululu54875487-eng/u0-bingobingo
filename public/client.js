@@ -11,7 +11,7 @@ const roomCodeLabel = document.querySelector("#roomCodeLabel");
 const copyLinkButton = document.querySelector("#copyLinkButton");
 const statusTitle = document.querySelector("#statusTitle");
 const lastCallLabel = document.querySelector("#lastCallLabel");
-const nextCallLabel = document.querySelector("#nextCallLabel");
+const callerLabel = document.querySelector("#callerLabel");
 const winLineLabel = document.querySelector("#winLineLabel");
 const playersList = document.querySelector("#playersList");
 const spectatorsList = document.querySelector("#spectatorsList");
@@ -25,6 +25,9 @@ const settingsHint = document.querySelector("#settingsHint");
 const roleLabel = document.querySelector("#roleLabel");
 const startButton = document.querySelector("#startButton");
 const resetButton = document.querySelector("#resetButton");
+const callButton = document.querySelector("#callButton");
+const wishInput = document.querySelector("#wishInput");
+const wishHint = document.querySelector("#wishHint");
 const bingoBoard = document.querySelector("#bingoBoard");
 const calledCountLabel = document.querySelector("#calledCountLabel");
 const calledList = document.querySelector("#calledList");
@@ -39,7 +42,6 @@ if (urlRoomCode) {
 }
 
 let state = null;
-let countdownId = null;
 let settingsDirty = false;
 
 function setError(message = "") {
@@ -112,6 +114,8 @@ function makePlayerItem(player) {
   const badges = [];
 
   if (player.isHost) badges.push("房主");
+  if (player.isCaller) badges.push("叫號中");
+  if (player.wishUsed) badges.push("已許願");
   if (state.winners.some((winner) => winner.id === player.id)) badges.push("贏家");
 
   name.className = "player-name";
@@ -213,19 +217,25 @@ function renderSettings(isHost) {
   }
 }
 
-function updateCountdown() {
-  if (!state?.nextCallAt || state.status !== "playing") {
-    nextCallLabel.textContent = "--";
-    return;
-  }
-  const seconds = Math.max(0, Math.ceil((state.nextCallAt - Date.now()) / 1000));
-  nextCallLabel.textContent = `${seconds}s`;
-}
+function renderCallControls(me) {
+  const isPlaying = state.status === "playing";
+  const isCaller = state.callerId === socket.id;
+  const wishUsed = Boolean(me?.wishUsed);
 
-function startCountdown() {
-  clearInterval(countdownId);
-  updateCountdown();
-  countdownId = setInterval(updateCountdown, 400);
+  callerLabel.textContent = isPlaying ? state.callerName || "等待叫號者" : "尚未開始";
+  callButton.hidden = !isPlaying;
+  wishInput.hidden = !isPlaying;
+  wishHint.hidden = !isPlaying;
+  callButton.disabled = !isCaller;
+  wishInput.disabled = !isCaller || wishUsed;
+  wishInput.placeholder = wishUsed ? "本局已用過許願" : "可輸入 1 次願望，例如：香蕉";
+  wishHint.textContent = isPlaying
+    ? isCaller
+      ? wishUsed
+        ? "你已用過本局的許願叫號，直接叫下一號吧。"
+        : "輪到你了：可直接叫號，或輸入願望再叫號。許願成功率 35%。"
+      : `等待 ${state.callerName || "下一位"} 叫號。`
+    : "玩家輪流叫號；每人每局可許願一次。";
 }
 
 function renderState(nextState) {
@@ -236,11 +246,11 @@ function renderState(nextState) {
   const winnerNames = state.winners.map((winner) => winner.name).join("、");
 
   roomCodeLabel.textContent = state.code;
-  lastCallLabel.textContent = state.lastItem || (state.status === "playing" ? "準備叫號" : categoryLabel(state.settings.category));
+  lastCallLabel.textContent = state.lastItem || (state.status === "playing" ? "等待玩家叫號" : categoryLabel(state.settings.category));
   winLineLabel.textContent = `${state.settings.winLines} 條線`;
   statusTitle.textContent =
     state.status === "playing"
-      ? `遊戲中 · 我的線數 ${myLines}`
+      ? `遊戲中 · ${state.callerName || "等待"} 叫號`
       : state.status === "finished"
         ? `本局勝利：${winnerNames || "平手"}`
         : "準備開局";
@@ -260,7 +270,7 @@ function renderState(nextState) {
   renderCalledItems();
   renderMessages(state.messages);
   renderSettings(isHost);
-  startCountdown();
+  renderCallControls(me);
 }
 
 function saveSettings() {
@@ -323,6 +333,12 @@ startButton.addEventListener("click", () => {
 
 resetButton.addEventListener("click", () => {
   socket.emit("game:reset");
+});
+
+callButton.addEventListener("click", () => {
+  if (!state || state.callerId !== socket.id) return;
+  socket.emit("game:call", { wish: wishInput.value.trim() });
+  wishInput.value = "";
 });
 
 [categorySelect, winLinesSelect].forEach((control) => {

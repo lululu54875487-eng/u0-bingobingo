@@ -9,7 +9,7 @@ const MAX_PLAYERS = 6;
 const MAX_NAME_LENGTH = 14;
 const MAX_CUSTOM_ITEMS = 120;
 const MAX_ITEM_LENGTH = 18;
-const CALL_INTERVAL_MS = 4200;
+const WISH_SUCCESS_RATE = 0.35;
 
 const itemCategories = {
   numbers: {
@@ -19,111 +19,21 @@ const itemCategories = {
   fruits: {
     label: "水果果籃",
     items: [
-      "蘋果",
-      "香蕉",
-      "草莓",
-      "葡萄",
-      "西瓜",
-      "芒果",
-      "鳳梨",
-      "奇異果",
-      "水蜜桃",
-      "櫻桃",
-      "橘子",
-      "柳橙",
-      "檸檬",
-      "藍莓",
-      "蔓越莓",
-      "梨子",
-      "哈密瓜",
-      "木瓜",
-      "火龍果",
-      "百香果",
-      "番石榴",
-      "柚子",
-      "荔枝",
-      "龍眼",
-      "桑葚",
-      "椰子",
-      "柿子",
-      "李子",
-      "梅子",
-      "無花果",
-      "覆盆莓",
-      "葡萄柚",
-      "香瓜",
-      "蓮霧",
-      "楊桃",
-      "酪梨",
-      "榴槤",
-      "山竹",
-      "紅毛丹",
-      "枇杷",
-      "甜桃",
-      "金桔",
-      "棗子",
-      "黑莓",
-      "蜜蘋果",
-      "青蘋果",
-      "蜜柑",
-      "甜橙",
-      "小番茄",
-      "白葡萄"
+      "蘋果", "香蕉", "草莓", "葡萄", "西瓜", "芒果", "鳳梨", "奇異果", "水蜜桃", "櫻桃",
+      "橘子", "柳橙", "檸檬", "藍莓", "蔓越莓", "梨子", "哈密瓜", "木瓜", "火龍果", "百香果",
+      "番石榴", "柚子", "荔枝", "龍眼", "桑葚", "椰子", "柿子", "李子", "梅子", "無花果",
+      "覆盆莓", "葡萄柚", "香瓜", "蓮霧", "楊桃", "酪梨", "榴槤", "山竹", "紅毛丹", "枇杷",
+      "甜桃", "金桔", "棗子", "黑莓", "蜜蘋果", "青蘋果", "蜜柑", "甜橙", "小番茄", "白葡萄"
     ]
   },
   animals: {
     label: "動物朋友",
     items: [
-      "小狗",
-      "小貓",
-      "兔子",
-      "倉鼠",
-      "企鵝",
-      "熊貓",
-      "長頸鹿",
-      "大象",
-      "獅子",
-      "老虎",
-      "斑馬",
-      "河馬",
-      "無尾熊",
-      "海豚",
-      "鯨魚",
-      "海龜",
-      "狐狸",
-      "松鼠",
-      "刺蝟",
-      "羊駝",
-      "浣熊",
-      "貓頭鷹",
-      "鸚鵡",
-      "天鵝",
-      "孔雀",
-      "青蛙",
-      "烏龜",
-      "章魚",
-      "水母",
-      "海星",
-      "蜜蜂",
-      "蝴蝶",
-      "瓢蟲",
-      "駱駝",
-      "袋鼠",
-      "北極熊",
-      "馴鹿",
-      "小雞",
-      "鴨子",
-      "綿羊",
-      "小豬",
-      "小牛",
-      "馬兒",
-      "猴子",
-      "樹懶",
-      "獨角仙",
-      "螢火蟲",
-      "鯊魚",
-      "貝殼",
-      "螃蟹"
+      "小狗", "小貓", "兔子", "倉鼠", "企鵝", "熊貓", "長頸鹿", "大象", "獅子", "老虎",
+      "斑馬", "河馬", "無尾熊", "海豚", "鯨魚", "海龜", "狐狸", "松鼠", "刺蝟", "羊駝",
+      "浣熊", "貓頭鷹", "鸚鵡", "天鵝", "孔雀", "青蛙", "烏龜", "章魚", "水母", "海星",
+      "蜜蜂", "蝴蝶", "瓢蟲", "駱駝", "袋鼠", "北極熊", "馴鹿", "小雞", "鴨子", "綿羊",
+      "小豬", "小牛", "馬兒", "猴子", "樹懶", "獨角仙", "螢火蟲", "鯊魚", "貝殼", "螃蟹"
     ]
   }
 };
@@ -168,8 +78,7 @@ function createRoom(roomCode = makeRoomCode()) {
     calledItems: [],
     callDeck: [],
     winners: [],
-    callTimer: null,
-    nextCallAt: null,
+    callerIndex: 0,
     settings: {
       category: "mixed",
       customItems: [],
@@ -213,6 +122,10 @@ function sanitizeCustomItems(input) {
   });
 
   return items.slice(0, MAX_CUSTOM_ITEMS);
+}
+
+function sanitizeWish(input) {
+  return String(input || "").trim().replace(/\s+/g, " ").slice(0, MAX_ITEM_LENGTH);
 }
 
 function getItemPool(settings) {
@@ -274,13 +187,22 @@ function getPlayer(room, socketId) {
   return room.participants.find((player) => player.id === socketId) || room.spectators.find((player) => player.id === socketId);
 }
 
+function currentCaller(room) {
+  if (room.status !== "playing" || room.participants.length === 0) return null;
+  room.callerIndex %= room.participants.length;
+  return room.participants[room.callerIndex];
+}
+
 function publicPlayer(player, room) {
   const calledSet = new Set(room.calledItems);
+  const caller = currentCaller(room);
   return {
     id: player.id,
     name: player.name,
     isHost: player.isHost,
     role: player.role,
+    wishUsed: Boolean(player.wishUsed),
+    isCaller: caller?.id === player.id,
     lines: player.role === "player" ? lineCount(player.board, calledSet) : 0
   };
 }
@@ -292,6 +214,7 @@ function viewerBoard(room, viewerId) {
 
 function roomState(room, viewerId) {
   const lastItem = room.calledItems[room.calledItems.length - 1] || null;
+  const caller = currentCaller(room);
   return {
     code: room.code,
     participants: room.participants.map((player) => publicPlayer(player, room)),
@@ -300,12 +223,14 @@ function roomState(room, viewerId) {
     status: room.status,
     calledItems: room.calledItems,
     lastItem,
-    nextCallAt: room.nextCallAt,
+    callerId: caller?.id || null,
+    callerName: caller?.name || null,
     winners: room.winners,
     board: viewerBoard(room, viewerId),
     settings: room.settings,
     categoryOptions,
-    maxPlayers: MAX_PLAYERS
+    maxPlayers: MAX_PLAYERS,
+    wishSuccessRate: WISH_SUCCESS_RATE
   };
 }
 
@@ -324,14 +249,7 @@ function addMessage(room, message) {
   room.messages = room.messages.slice(-80);
 }
 
-function stopCalling(room) {
-  clearTimeout(room.callTimer);
-  room.callTimer = null;
-  room.nextCallAt = null;
-}
-
 function endGame(room, reason = "done") {
-  stopCalling(room);
   room.status = "finished";
 
   if (reason === "empty") {
@@ -362,28 +280,54 @@ function checkWinners(room) {
   return true;
 }
 
-function scheduleNextCall(room) {
-  if (room.status !== "playing") return;
-  room.nextCallAt = Date.now() + CALL_INTERVAL_MS;
-  room.callTimer = setTimeout(() => callNextItem(room), CALL_INTERVAL_MS);
+function drawItem(room, player, wishText) {
+  let item = null;
+  const wish = sanitizeWish(wishText);
+
+  if (wish) {
+    if (player.wishUsed) {
+      addMessage(room, { type: "system", text: `${player.name} 已經用過本局的許願叫號。` });
+    } else {
+      player.wishUsed = true;
+      const wishIndex = room.callDeck.findIndex((candidate) => candidate.toLowerCase() === wish.toLowerCase());
+      const success = wishIndex >= 0 && Math.random() < WISH_SUCCESS_RATE;
+
+      if (success) {
+        item = room.callDeck.splice(wishIndex, 1)[0];
+        addMessage(room, { type: "wish", text: `${player.name} 許願成功：${item}！` });
+      } else if (wishIndex >= 0) {
+        addMessage(room, { type: "wish", text: `${player.name} 許願 ${wish}，但這次沒有成功。` });
+      } else {
+        addMessage(room, { type: "wish", text: `${player.name} 許願 ${wish}，但它已經被叫過或不在題庫裡。` });
+      }
+    }
+  }
+
+  return item || room.callDeck.shift();
 }
 
-function callNextItem(room) {
+function callNextItem(room, socketId, wishText = "") {
   if (room.status !== "playing") return;
-  const item = room.callDeck.shift();
+  const caller = currentCaller(room);
+  if (!caller || caller.id !== socketId) return;
 
+  const item = drawItem(room, caller, wishText);
   if (!item) {
     endGame(room, "empty");
     return;
   }
 
   room.calledItems.push(item);
-  addMessage(room, { type: "call", text: `叫號：${item}` });
+  addMessage(room, { type: "call", text: `${caller.name} 叫號：${item}` });
 
   if (checkWinners(room)) return;
 
+  room.callerIndex = (room.callerIndex + 1) % room.participants.length;
+  const nextCaller = currentCaller(room);
+  if (nextCaller) {
+    addMessage(room, { type: "system", text: `換 ${nextCaller.name} 叫下一號。` });
+  }
   emitRoom(room);
-  scheduleNextCall(room);
 }
 
 function startGame(room) {
@@ -402,31 +346,33 @@ function startGame(room) {
     return;
   }
 
-  stopCalling(room);
   room.status = "playing";
   room.calledItems = [];
   room.callDeck = shuffle(pool);
   room.winners = [];
+  room.callerIndex = 0;
   room.participants.forEach((player) => {
     player.board = makeBoard(pool);
+    player.wishUsed = false;
   });
 
   addMessage(room, {
     type: "system",
-    text: `遊戲開始！先完成 ${room.settings.winLines} 條線的人獲勝。`
+    text: `遊戲開始！採用玩家輪流叫號，先完成 ${room.settings.winLines} 條線的人獲勝。`
   });
+  addMessage(room, { type: "system", text: `第一位叫號者：${currentCaller(room)?.name || "等待中"}。` });
   emitRoom(room);
-  callNextItem(room);
 }
 
 function resetToLobby(room) {
-  stopCalling(room);
   room.status = "lobby";
   room.calledItems = [];
   room.callDeck = [];
   room.winners = [];
+  room.callerIndex = 0;
   room.participants.forEach((player) => {
     player.board = null;
+    player.wishUsed = false;
   });
   addMessage(room, { type: "system", text: "已回到準備室，可以調整題庫再開一局。" });
   emitRoom(room);
@@ -438,6 +384,7 @@ function makeGuest(socketId, name, role, isHost = false) {
     name: sanitizeName(name),
     role,
     isHost,
+    wishUsed: false,
     board: null
   };
 }
@@ -513,6 +460,12 @@ io.on("connection", (socket) => {
     startGame(room);
   });
 
+  socket.on("game:call", ({ wish } = {}) => {
+    const room = rooms.get(socket.data.roomCode);
+    if (!room) return;
+    callNextItem(room, socket.id, wish);
+  });
+
   socket.on("game:reset", () => {
     const room = rooms.get(socket.data.roomCode);
     if (!room) return;
@@ -542,6 +495,7 @@ io.on("connection", (socket) => {
     if (!room) return;
 
     const leavingPlayer = getPlayer(room, socket.id);
+    const wasCaller = room.status === "playing" && currentCaller(room)?.id === socket.id;
     room.participants = room.participants.filter((player) => player.id !== socket.id);
     room.spectators = room.spectators.filter((player) => player.id !== socket.id);
 
@@ -550,7 +504,6 @@ io.on("connection", (socket) => {
     }
 
     if (room.participants.length === 0 && room.spectators.length === 0) {
-      stopCalling(room);
       rooms.delete(room.code);
       return;
     }
@@ -562,6 +515,14 @@ io.on("connection", (socket) => {
     }
 
     if (room.status === "playing") {
+      if (room.participants.length === 0) {
+        endGame(room, "empty");
+        return;
+      }
+      room.callerIndex %= room.participants.length;
+      if (wasCaller) {
+        addMessage(room, { type: "system", text: `換 ${currentCaller(room)?.name} 叫下一號。` });
+      }
       checkWinners(room);
     }
 

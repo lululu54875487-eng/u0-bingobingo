@@ -57,8 +57,8 @@
             <strong id="lastCallLabel">等待開始</strong>
           </div>
           <div>
-            <span>下一次</span>
-            <strong id="nextCallLabel">--</strong>
+            <span>目前叫號者</span>
+            <strong id="callerLabel">尚未開始</strong>
           </div>
           <div>
             <span>決勝</span>
@@ -101,7 +101,7 @@
               <label for="customItemsInput">自訂題目</label>
               <textarea id="customItemsInput" rows="6" maxlength="1200" placeholder="一行一個題目，也可用逗號分隔&#10;布丁&#10;熱氣球&#10;小蛋糕"></textarea>
               <p id="settingsHint" class="helper-text">房主可以在開局前調整題庫與勝利條件。</p>
-              <p class="mini-rule">開始後系統會自動叫號，玩家不用手動點格子，先完成指定線數就獲勝。</p>
+              <p class="mini-rule">開始後改成玩家輪流叫號。每位參賽者每局有 1 次許願叫號，成功率 35%。</p>
             </div>
           </aside>
 
@@ -115,6 +115,18 @@
                 <button id="startButton" class="primary-button" type="button">開始遊戲</button>
                 <button id="resetButton" class="secondary-button" type="button">回準備室</button>
               </div>
+            </div>
+
+            <div class="call-panel">
+              <div>
+                <span>輪流叫號</span>
+                <strong>輪到你時，可以直接叫號，也可以輸入願望再叫號。</strong>
+              </div>
+              <div class="wish-row">
+                <input id="wishInput" maxlength="18" placeholder="可輸入 1 次願望，例如：香蕉" />
+                <button id="callButton" class="primary-button" type="button">叫下一號</button>
+              </div>
+              <p id="wishHint" class="helper-text">玩家輪流叫號；每人每局可許願一次。</p>
             </div>
 
             <div id="bingoBoard" class="bingo-board" aria-live="polite"></div>

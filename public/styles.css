@@ -448,6 +448,54 @@ textarea:disabled {
   align-content: start;
 }
 
+.call-panel {
+  display: grid;
+  gap: 9px;
+  width: min(100%, 680px);
+  margin: 0 auto;
+  padding: 12px;
+  border: 1px solid rgba(239, 222, 170, 0.9);
+  border-radius: 16px;
+  background: rgba(255, 250, 240, 0.86);
+}
+
+.call-panel span {
+  display: block;
+  color: var(--berry);
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.call-panel strong {
+  display: block;
+  margin-top: 3px;
+  color: #6e5d28;
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.wish-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.wish-row input {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  outline: 0;
+  padding: 0 13px;
+  background: var(--white);
+  color: var(--ink);
+}
+
+.wish-row input:focus {
+  border-color: var(--chick-300);
+  box-shadow: 0 0 0 4px rgba(233, 201, 101, 0.25);
+}
+
 .role-label {
   color: var(--berry);
   font-size: 13px;
@@ -623,6 +671,12 @@ textarea:disabled {
   font-weight: 950;
 }
 
+.message.wish {
+  background: #fff6cc;
+  color: #856929;
+  font-weight: 950;
+}
+
 .emoji-row {
   display: grid;
   grid-template-columns: repeat(8, minmax(0, 1fr));
@@ -725,7 +779,8 @@ textarea:disabled {
 
   .join-actions,
   .chat-form,
-  .game-actions {
+  .game-actions,
+  .wish-row {
     grid-template-columns: 1fr;
   }
 
