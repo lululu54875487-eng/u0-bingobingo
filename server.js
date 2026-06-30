@@ -167,6 +167,23 @@ function makeBoard(pool) {
   return board;
 }
 
+function makeCallDeckFromBoards(players) {
+  const seen = new Set();
+  const items = [];
+
+  players.forEach((player) => {
+    (player.board || []).forEach((cell) => {
+      if (!cell?.text || cell.free) return;
+      const key = cell.text.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      items.push(cell.text);
+    });
+  });
+
+  return shuffle(items);
+}
+
 function lineCount(board, calledSet) {
   if (!board?.length) return 0;
   const marked = (index) => board[index]?.free || calledSet.has(board[index]?.text);
@@ -288,17 +305,16 @@ function drawItem(room, player, wishText) {
     if (player.wishUsed) {
       addMessage(room, { type: "system", text: `${player.name} 已經用過本局的許願叫號。` });
     } else {
-      player.wishUsed = true;
       const wishIndex = room.callDeck.findIndex((candidate) => candidate.toLowerCase() === wish.toLowerCase());
-      const success = wishIndex >= 0 && Math.random() < WISH_SUCCESS_RATE;
-
-      if (success) {
+      if (wishIndex < 0) {
+        addMessage(room, { type: "wish", text: `${player.name} 許願 ${wish}，但它已經被叫過或不在大家的賓果卡裡，這次不消耗許願。` });
+      } else if (Math.random() < WISH_SUCCESS_RATE) {
+        player.wishUsed = true;
         item = room.callDeck.splice(wishIndex, 1)[0];
         addMessage(room, { type: "wish", text: `${player.name} 許願成功：${item}！` });
-      } else if (wishIndex >= 0) {
-        addMessage(room, { type: "wish", text: `${player.name} 許願 ${wish}，但這次沒有成功。` });
       } else {
-        addMessage(room, { type: "wish", text: `${player.name} 許願 ${wish}，但它已經被叫過或不在題庫裡。` });
+        player.wishUsed = true;
+        addMessage(room, { type: "wish", text: `${player.name} 許願 ${wish}，但這次沒有成功。` });
       }
     }
   }
@@ -309,16 +325,26 @@ function drawItem(room, player, wishText) {
 function callNextItem(room, socketId, wishText = "") {
   if (room.status !== "playing") return;
   const caller = currentCaller(room);
-  if (!caller || caller.id !== socketId) return;
+  const actor = getPlayer(room, socketId);
+  const actorIsCaller = caller?.id === socketId;
+  const actorIsHost = Boolean(actor?.isHost);
+  if (!caller || (!actorIsCaller && !actorIsHost)) return;
 
-  const item = drawItem(room, caller, wishText);
+  if (!actorIsCaller && wishText) {
+    addMessage(room, { type: "system", text: "房主代叫時不會使用玩家的許願。" });
+  }
+
+  const item = drawItem(room, caller, actorIsCaller ? wishText : "");
   if (!item) {
     endGame(room, "empty");
     return;
   }
 
   room.calledItems.push(item);
-  addMessage(room, { type: "call", text: `${caller.name} 叫號：${item}` });
+  addMessage(room, {
+    type: "call",
+    text: actorIsCaller ? `${caller.name} 叫號：${item}` : `${actor.name} 代替 ${caller.name} 叫號：${item}`
+  });
 
   if (checkWinners(room)) return;
 
@@ -327,6 +353,25 @@ function callNextItem(room, socketId, wishText = "") {
   if (nextCaller) {
     addMessage(room, { type: "system", text: `換 ${nextCaller.name} 叫下一號。` });
   }
+  emitRoom(room);
+}
+
+function skipCurrentCaller(room, socketId) {
+  if (room.status !== "playing") return;
+  const actor = getPlayer(room, socketId);
+  if (!actor?.isHost) return;
+
+  const caller = currentCaller(room);
+  if (!caller) return;
+
+  if (room.participants.length <= 1) {
+    addMessage(room, { type: "system", text: "目前只有 1 位參賽者，無法跳過叫號者。" });
+    emitRoom(room);
+    return;
+  }
+
+  room.callerIndex = (room.callerIndex + 1) % room.participants.length;
+  addMessage(room, { type: "system", text: `${actor.name} 跳過 ${caller.name}，換 ${currentCaller(room)?.name} 叫下一號。` });
   emitRoom(room);
 }
 
@@ -348,19 +393,20 @@ function startGame(room) {
 
   room.status = "playing";
   room.calledItems = [];
-  room.callDeck = shuffle(pool);
   room.winners = [];
   room.callerIndex = 0;
   room.participants.forEach((player) => {
     player.board = makeBoard(pool);
     player.wishUsed = false;
   });
+  room.callDeck = makeCallDeckFromBoards(room.participants);
 
   addMessage(room, {
     type: "system",
     text: `遊戲開始！採用玩家輪流叫號，先完成 ${room.settings.winLines} 條線的人獲勝。`
   });
   addMessage(room, { type: "system", text: `第一位叫號者：${currentCaller(room)?.name || "等待中"}。` });
+  addMessage(room, { type: "system", text: "本局叫號只會抽到參賽者卡片上的項目，節奏會更緊湊。" });
   emitRoom(room);
 }
 
@@ -452,6 +498,33 @@ io.on("connection", (socket) => {
     emitRoom(room);
   });
 
+  socket.on("room:takeSeat", (payload, callback) => {
+    const room = rooms.get(socket.data.roomCode);
+    if (!room) return;
+    const spectator = room.spectators.find((player) => player.id === socket.id);
+    if (!spectator) {
+      callback?.({ ok: false, error: "你已經在參賽席，或尚未加入房間。" });
+      return;
+    }
+    if (room.status !== "lobby") {
+      callback?.({ ok: false, error: "只有準備室可以加入參賽席。" });
+      return;
+    }
+    if (room.participants.length >= MAX_PLAYERS) {
+      callback?.({ ok: false, error: "參賽席已滿，最多 6 人。" });
+      return;
+    }
+
+    room.spectators = room.spectators.filter((player) => player.id !== socket.id);
+    spectator.role = "player";
+    spectator.board = null;
+    spectator.wishUsed = false;
+    room.participants.push(spectator);
+    addMessage(room, { type: "system", text: `${spectator.name} 從觀眾席加入參賽席。` });
+    callback?.({ ok: true });
+    emitRoom(room);
+  });
+
   socket.on("game:start", () => {
     const room = rooms.get(socket.data.roomCode);
     if (!room) return;
@@ -464,6 +537,12 @@ io.on("connection", (socket) => {
     const room = rooms.get(socket.data.roomCode);
     if (!room) return;
     callNextItem(room, socket.id, wish);
+  });
+
+  socket.on("game:skipCaller", () => {
+    const room = rooms.get(socket.data.roomCode);
+    if (!room) return;
+    skipCurrentCaller(room, socket.id);
   });
 
   socket.on("game:reset", () => {

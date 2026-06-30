@@ -101,7 +101,7 @@
               <label for="customItemsInput">自訂題目</label>
               <textarea id="customItemsInput" rows="6" maxlength="1200" placeholder="一行一個題目，也可用逗號分隔&#10;布丁&#10;熱氣球&#10;小蛋糕"></textarea>
               <p id="settingsHint" class="helper-text">房主可以在開局前調整題庫與勝利條件。</p>
-              <p class="mini-rule">開始後改成玩家輪流叫號。每位參賽者每局有 1 次許願叫號，成功率 35%。</p>
+              <p class="mini-rule">開始後玩家輪流叫號。每位參賽者每局有 1 次許願叫號，成功率 35%。房主可以代叫或跳過卡住的玩家。</p>
             </div>
           </aside>
 
@@ -125,6 +125,7 @@
               <div class="wish-row">
                 <input id="wishInput" maxlength="18" placeholder="可輸入 1 次願望，例如：香蕉" />
                 <button id="callButton" class="primary-button" type="button">叫下一號</button>
+                <button id="skipCallerButton" class="secondary-button" type="button">跳過</button>
               </div>
               <p id="wishHint" class="helper-text">玩家輪流叫號；每人每局可許願一次。</p>
             </div>
@@ -145,7 +146,10 @@
             <div class="spectators-box">
               <div class="panel-title">
                 <h3>觀眾</h3>
-                <span id="spectatorCountLabel">0</span>
+                <div class="panel-actions">
+                  <span id="spectatorCountLabel">0</span>
+                  <button id="takeSeatButton" class="mini-button" type="button">加入參賽席</button>
+                </div>
               </div>
               <ul id="spectatorsList" class="spectators-list"></ul>
             </div>

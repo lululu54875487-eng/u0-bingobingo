@@ -26,8 +26,10 @@ const roleLabel = document.querySelector("#roleLabel");
 const startButton = document.querySelector("#startButton");
 const resetButton = document.querySelector("#resetButton");
 const callButton = document.querySelector("#callButton");
+const skipCallerButton = document.querySelector("#skipCallerButton");
 const wishInput = document.querySelector("#wishInput");
 const wishHint = document.querySelector("#wishHint");
+const takeSeatButton = document.querySelector("#takeSeatButton");
 const bingoBoard = document.querySelector("#bingoBoard");
 const calledCountLabel = document.querySelector("#calledCountLabel");
 const calledList = document.querySelector("#calledList");
@@ -220,13 +222,18 @@ function renderSettings(isHost) {
 function renderCallControls(me) {
   const isPlaying = state.status === "playing";
   const isCaller = state.callerId === socket.id;
+  const isHost = Boolean(me?.isHost);
+  const canCall = isCaller || (isPlaying && isHost);
   const wishUsed = Boolean(me?.wishUsed);
 
   callerLabel.textContent = isPlaying ? state.callerName || "等待叫號者" : "尚未開始";
   callButton.hidden = !isPlaying;
   wishInput.hidden = !isPlaying;
   wishHint.hidden = !isPlaying;
-  callButton.disabled = !isCaller;
+  skipCallerButton.hidden = !isPlaying || !isHost;
+  skipCallerButton.disabled = !isHost || state.participants.length <= 1;
+  callButton.disabled = !canCall;
+  callButton.textContent = isCaller ? "叫下一號" : isHost && isPlaying ? "房主代叫" : "叫下一號";
   wishInput.disabled = !isCaller || wishUsed;
   wishInput.placeholder = wishUsed ? "本局已用過許願" : "可輸入 1 次願望，例如：香蕉";
   wishHint.textContent = isPlaying
@@ -234,8 +241,15 @@ function renderCallControls(me) {
       ? wishUsed
         ? "你已用過本局的許願叫號，直接叫下一號吧。"
         : "輪到你了：可直接叫號，或輸入願望再叫號。許願成功率 35%。"
+      : isHost
+        ? `等待 ${state.callerName || "下一位"} 叫號。房主可代叫或跳過。`
       : `等待 ${state.callerName || "下一位"} 叫號。`
     : "玩家輪流叫號；每人每局可許願一次。";
+}
+
+function renderSeatControls(me) {
+  const canTakeSeat = me?.role === "spectator" && state.status === "lobby" && state.participants.length < state.maxPlayers;
+  takeSeatButton.hidden = !canTakeSeat;
 }
 
 function renderState(nextState) {
@@ -271,6 +285,7 @@ function renderState(nextState) {
   renderMessages(state.messages);
   renderSettings(isHost);
   renderCallControls(me);
+  renderSeatControls(me);
 }
 
 function saveSettings() {
@@ -336,9 +351,33 @@ resetButton.addEventListener("click", () => {
 });
 
 callButton.addEventListener("click", () => {
-  if (!state || state.callerId !== socket.id) return;
+  const me = myProfile();
+  if (!state || (state.callerId !== socket.id && !me?.isHost)) return;
   socket.emit("game:call", { wish: wishInput.value.trim() });
   wishInput.value = "";
+});
+
+skipCallerButton.addEventListener("click", () => {
+  socket.emit("game:skipCaller");
+});
+
+takeSeatButton.addEventListener("click", () => {
+  takeSeatButton.disabled = true;
+  socket.emit("room:takeSeat", null, (response) => {
+    if (!response?.ok) {
+      takeSeatButton.textContent = response?.error || "暫時不能入座";
+      setTimeout(() => {
+        takeSeatButton.textContent = "加入參賽席";
+        takeSeatButton.disabled = false;
+      }, 1600);
+      return;
+    }
+    takeSeatButton.textContent = "已入座";
+    setTimeout(() => {
+      takeSeatButton.textContent = "加入參賽席";
+      takeSeatButton.disabled = false;
+    }, 1000);
+  });
 });
 
 [categorySelect, winLinesSelect].forEach((control) => {

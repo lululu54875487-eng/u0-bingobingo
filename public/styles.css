@@ -214,6 +214,7 @@ h1 span {
 .primary-button,
 .secondary-button,
 .small-button,
+.mini-button,
 .chat-form button,
 .room-pill button {
   min-height: 44px;
@@ -235,6 +236,7 @@ h1 span {
 }
 
 .secondary-button,
+.mini-button,
 .room-pill button {
   background: #edf6e8;
   color: var(--leaf-dark);
@@ -378,6 +380,19 @@ textarea:disabled {
   gap: 10px;
 }
 
+.panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mini-button {
+  min-height: 34px;
+  padding: 0 10px;
+  border-radius: 12px;
+  font-size: 12px;
+}
+
 .panel-title h3,
 .board-head h3,
 .chat-box h3 {
@@ -476,7 +491,7 @@ textarea:disabled {
 
 .wish-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 8px;
 }
 
