@@ -640,13 +640,15 @@ textarea:disabled {
 }
 
 .chat-box {
-  min-height: 540px;
+  height: clamp(360px, calc(100dvh - 210px), 540px);
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto auto;
 }
 
 .messages-list {
+  min-height: 0;
   overflow: auto;
+  overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -732,7 +734,7 @@ textarea:disabled {
   }
 
   .chat-box {
-    min-height: 340px;
+    height: 340px;
   }
 }
 
@@ -769,9 +771,34 @@ textarea:disabled {
     grid-column: 1 / -1;
   }
 
-  .play-layout,
-  .right-panel {
+  .play-layout {
     grid-template-columns: 1fr;
+  }
+
+  .left-panel,
+  .right-panel {
+    display: contents;
+  }
+
+  .players-box {
+    order: 1;
+  }
+
+  .settings-box {
+    order: 2;
+  }
+
+  .spectators-box {
+    order: 3;
+  }
+
+  .board-panel {
+    order: 4;
+  }
+
+  .chat-box {
+    order: 5;
+    height: clamp(320px, 52dvh, 460px);
   }
 
   .bingo-board {

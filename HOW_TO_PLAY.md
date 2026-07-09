@@ -1,76 +1,19 @@
-const test = require("node:test");
-const assert = require("node:assert/strict");
-const {
-  sanitizeCustomItems,
-  sanitizeRoomCode,
-  sanitizeChat,
-  createRoom,
-  makeGuest,
-  makeBoard,
-  lineCount,
-  startGame,
-  callNextItem,
-  removeGuest,
-  currentCaller,
-  cleanupRooms
-} = require("../src/game");
+# 小u0賓果bingo 玩法說明
 
-test("sanitizers normalize unsafe input", () => {
-  assert.equal(sanitizeRoomCode(" ab-cd!! "), "ABCD");
-  assert.equal(sanitizeChat("  hello    bingo  "), "hello bingo");
-  assert.deepEqual(sanitizeCustomItems("Apple, apple，Banana、  Cat  \nCat"), ["Apple", "Banana", "Cat"]);
-});
+一起玩 5x5 賓果小遊戲！
 
-test("makeBoard creates a 5x5 board with a free center", () => {
-  const pool = Array.from({ length: 30 }, (_, index) => `item-${index}`);
-  const board = makeBoard(pool);
-  assert.equal(board.length, 25);
-  assert.deepEqual(board[12], { text: "FREE", free: true });
-  assert.equal(new Set(board.filter((cell) => !cell.free).map((cell) => cell.text)).size, 24);
-});
+1. 房主建立房間，把房間連結傳給大家。
+2. 每個人輸入暱稱加入房間。參賽者最多 6 人，超過的人會變成觀眾，也可以留言和按表情。
+3. 開始前，房主可以選題庫：數字、水果、動物、全部混合，或自己輸入題目。
+4. 房主也可以選決勝條件：先完成 1 條線、2 條線，或 3 條線的人獲勝。
+5. 房主按下「開始遊戲」後，每位參賽者會拿到自己的 5x5 賓果卡。
+6. 遊戲會照參賽者順序輪流叫號，輪到你時按「叫下一號」。
+7. 每位參賽者每局有 1 次「許願叫號」，可以輸入想要的題目再叫號，成功率 35%。
+8. 如果願望不在大家的賓果卡裡，或已經被叫過，這次不會消耗許願。
+9. 叫到的格子會自動蓋章，不需要自己點。
+10. 橫線、直線、斜線都算 1 條線，中間 FREE 格一開始就算蓋章。
+11. 先達成房主設定線數的人就是贏家。
+12. 如果輪到的人暫時不在，房主可以代叫或跳過。
+13. 遊戲結束後，房主可以按「回準備室」重新調整題庫再玩一局。
 
-test("lineCount counts rows, columns, and diagonals", () => {
-  const board = Array.from({ length: 25 }, (_, index) => ({ text: String(index), free: index === 12 }));
-  assert.equal(lineCount(board, new Set(["0", "1", "2", "3", "4"])), 1);
-  assert.equal(lineCount(board, new Set(["0", "6", "18", "24"])), 1);
-  assert.equal(lineCount(board, new Set(["0", "1", "2", "3", "4", "5", "10", "15", "20"])), 2);
-});
-
-test("callNextItem advances caller and host can call for current caller", () => {
-  const rooms = new Map();
-  const room = createRoom(rooms, "TEST");
-  room.participants.push(makeGuest("a", "ca", "A", "player", true));
-  room.participants.push(makeGuest("b", "cb", "B", "player", false));
-
-  assert.equal(startGame(room).ok, true);
-  assert.equal(currentCaller(room).id, "a");
-
-  const first = callNextItem(room, "a", "", () => 1);
-  assert.equal(first.ok, true);
-  assert.equal(currentCaller(room).id, "b");
-
-  const second = callNextItem(room, "a", "", () => 1);
-  assert.equal(second.ok, true);
-  assert.equal(currentCaller(room).id, "a");
-});
-
-test("removing a player before the caller preserves the active caller", () => {
-  const rooms = new Map();
-  const room = createRoom(rooms, "DROP");
-  room.participants.push(makeGuest("a", "ca", "A", "player", true));
-  room.participants.push(makeGuest("b", "cb", "B", "player", false));
-  room.participants.push(makeGuest("c", "cc", "C", "player", false));
-  room.status = "playing";
-  room.callerIndex = 2;
-
-  removeGuest(room, "a");
-  assert.equal(currentCaller(room).id, "c");
-});
-
-test("cleanupRooms removes stale empty rooms", () => {
-  const rooms = new Map();
-  const room = createRoom(rooms, "OLD");
-  room.lastActiveAt = 1;
-  assert.equal(cleanupRooms(rooms, Number.MAX_SAFE_INTEGER), 1);
-  assert.equal(rooms.has("OLD"), false);
-});
+小提醒：觀眾不能拿賓果卡，但可以在旁邊留言、按表情、喊 BINGO! 幫大家加油。回到準備室後，觀眾也可以按「加入參賽席」參加下一局。

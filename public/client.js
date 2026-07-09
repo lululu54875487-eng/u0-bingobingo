@@ -37,6 +37,8 @@ const messagesList = document.querySelector("#messagesList");
 const chatForm = document.querySelector("#chatForm");
 const chatInput = document.querySelector("#chatInput");
 const emojiButtons = Array.from(document.querySelectorAll(".emoji-row button"));
+const CLIENT_ID_KEY = "u0-bingo-client-id";
+const SESSION_KEY = "u0-bingo-session";
 
 const urlRoomCode = location.pathname.match(/\/room\/([A-Za-z0-9]+)/)?.[1];
 if (urlRoomCode) {
@@ -45,6 +47,37 @@ if (urlRoomCode) {
 
 let state = null;
 let settingsDirty = false;
+let lastBoardSignature = "";
+let lastCalledSignature = "";
+let lastMessagesSignature = "";
+
+function clientId() {
+  let id = localStorage.getItem(CLIENT_ID_KEY);
+  if (!id) {
+    id = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    localStorage.setItem(CLIENT_ID_KEY, id);
+  }
+  return id;
+}
+
+function saveSession(roomCode) {
+  localStorage.setItem(
+    SESSION_KEY,
+    JSON.stringify({
+      roomCode,
+      name: playerName(),
+      clientId: clientId()
+    })
+  );
+}
+
+function savedSession() {
+  try {
+    return JSON.parse(localStorage.getItem(SESSION_KEY) || "null");
+  } catch {
+    return null;
+  }
+}
 
 function setError(message = "") {
   joinError.textContent = message;
@@ -70,11 +103,12 @@ function roomLink(code) {
 
 function requestCreateRoom() {
   rememberName();
-  socket.emit("room:create", { name: playerName() }, (response) => {
+  socket.emit("room:create", { name: playerName(), clientId: clientId() }, (response) => {
     if (!response?.ok) {
       setError(response?.error || "建立房間失敗，請再試一次。");
       return;
     }
+    saveSession(response.roomCode);
     history.replaceState(null, "", `/room/${response.roomCode}`);
     enterGame();
   });
@@ -87,11 +121,12 @@ function requestJoinRoom() {
     setError("請輸入房間代碼，或直接建立新房間。");
     return;
   }
-  socket.emit("room:join", { roomCode, name: playerName() }, (response) => {
+  socket.emit("room:join", { roomCode, name: playerName(), clientId: clientId() }, (response) => {
     if (!response?.ok) {
       setError(response?.error || "加入房間失敗，請再試一次。");
       return;
     }
+    saveSession(response.roomCode);
     history.replaceState(null, "", `/room/${response.roomCode}`);
     enterGame();
   });
@@ -109,6 +144,10 @@ function markedCell(cell) {
   return cell?.free || state.calledItems.includes(cell?.text);
 }
 
+function playerLabel(player) {
+  return `${player.name}${player.connected === false ? " · 離線" : ""}`;
+}
+
 function makePlayerItem(player) {
   const item = document.createElement("li");
   const name = document.createElement("span");
@@ -122,7 +161,7 @@ function makePlayerItem(player) {
 
   name.className = "player-name";
   score.className = "player-score";
-  name.textContent = `${player.name}${badges.length ? ` · ${badges.join(" · ")}` : ""}`;
+  name.textContent = `${playerLabel(player)}${badges.length ? ` · ${badges.join(" · ")}` : ""}`;
   score.textContent = `${player.lines}/${state.settings.winLines}`;
   item.append(name, score);
   return item;
@@ -133,7 +172,7 @@ function renderPlayers() {
   spectatorsList.replaceChildren(
     ...state.spectators.map((player) => {
       const item = document.createElement("li");
-      item.textContent = `${player.name}${player.isHost ? " · 房主" : ""}`;
+      item.textContent = `${playerLabel(player)}${player.isHost ? " · 房主" : ""}`;
       return item;
     })
   );
@@ -142,6 +181,14 @@ function renderPlayers() {
 }
 
 function renderBoard() {
+  const signature = JSON.stringify({
+    board: state.board,
+    calledItems: state.calledItems,
+    status: state.status
+  });
+  if (signature === lastBoardSignature) return;
+  lastBoardSignature = signature;
+
   if (!state.board) {
     const isPlaying = state.status === "playing";
     bingoBoard.classList.add("empty");
@@ -167,6 +214,10 @@ function renderBoard() {
 }
 
 function renderCalledItems() {
+  const signature = state.calledItems.join("\u0001");
+  if (signature === lastCalledSignature) return;
+  lastCalledSignature = signature;
+
   calledCountLabel.textContent = String(state.calledItems.length);
   calledList.replaceChildren(
     ...state.calledItems.slice(-28).reverse().map((item, index) => {
@@ -192,6 +243,10 @@ function messageMarkup(message) {
 }
 
 function renderMessages(messages) {
+  const signature = messages.map((message) => message.id).join("\u0001");
+  if (signature === lastMessagesSignature) return;
+  lastMessagesSignature = signature;
+
   messagesList.replaceChildren(...messages.map(messageMarkup));
   messagesList.scrollTop = messagesList.scrollHeight;
 }
@@ -409,9 +464,24 @@ emojiButtons.forEach((button) => {
 socket.on("room:state", renderState);
 socket.on("chat:message", (message) => {
   if (!state) return;
+  if (state.messages.some((item) => item.id === message.id)) return;
   state.messages.push(message);
   renderMessages(state.messages);
 });
 
 const savedName = localStorage.getItem("u0-bingo-name");
 if (savedName) nameInput.value = savedName;
+
+socket.on("connect", () => {
+  const session = savedSession();
+  const roomCode = urlRoomCode || session?.roomCode;
+  const name = playerName() || session?.name || "";
+  if (!roomCode || state) return;
+
+  socket.emit("room:join", { roomCode, name, clientId: clientId() }, (response) => {
+    if (!response?.ok) return;
+    saveSession(response.roomCode);
+    history.replaceState(null, "", `/room/${response.roomCode}`);
+    enterGame();
+  });
+});
